@@ -121,14 +121,16 @@ export default function Webspaceship({ gameOver = false, ...props }) {
     let moveRight = keys.current.d || keys.current.arrowright
     
     if (window.controlMode === 'mobile') {
-      const pitch = window.gyroPitch || 0; // beta: front/back tilt [-180, 180]
-      const roll = window.gyroRoll || 0;   // gamma: left/right tilt [-90, 90]
-      
-      // Neutral position is holding phone roughly at 45 degrees
-      if (pitch < 30) moveUp = true;
-      if (pitch > 60) moveDown = true;
-      if (roll < -15) moveLeft = true;
-      if (roll > 15) moveRight = true;
+      if (typeof window.gyroPitch !== 'undefined' && typeof window.gyroRoll !== 'undefined') {
+        const pitch = window.gyroPitch; // beta: front/back tilt [-180, 180]
+        const roll = window.gyroRoll;   // gamma: left/right tilt [-90, 90]
+        
+        // Neutral position is holding phone roughly at 45 degrees
+        if (pitch < 30) moveUp = true;
+        if (pitch > 60) moveDown = true;
+        if (roll < -15) moveLeft = true;
+        if (roll > 15) moveRight = true;
+      }
     }
 
     window.spaceshipMoving = moveUp || moveDown || moveLeft || moveRight;

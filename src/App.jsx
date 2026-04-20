@@ -46,8 +46,8 @@ function RockObstacles({ gameOver, onHitRock }) {
       object.traverse((child) => {
         if (!child.isMesh) return;
         child.material = child.material.clone();
-        child.material.color = new THREE.Color('#2a2a2f');
-        child.material.roughness = 1;
+        child.material.color = new THREE.Color('#888890');
+        child.material.roughness = 0.8;
         child.material.metalness = 0.05;
         if (!child.geometry.boundsTree) child.geometry.computeBoundsTree();
         colliders.push(child);
@@ -262,9 +262,14 @@ function App() {
           if (permissionState === 'granted') {
             setupGyro();
           } else {
+            alert('Gyroscope permission denied. You can still play by touching to boost, but you cannot steer.');
             setGameState('playing'); // fallback
           }
-        }).catch(console.error);
+        }).catch(err => {
+          console.error(err);
+          alert('Gyroscope permission error (Must be HTTPS). Error: ' + err);
+          setupGyro(); // Try anyway
+        });
       } else {
         setupGyro();
       }
