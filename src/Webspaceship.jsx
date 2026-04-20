@@ -121,11 +121,11 @@ export default function Webspaceship({ gameOver = false, ...props }) {
     let moveRight = keys.current.d || keys.current.arrowright
     
     if (window.controlMode === 'mobile') {
-      if (typeof window.gyroPitch !== 'undefined' && typeof window.gyroRoll !== 'undefined') {
+      if (window.gyroPitch != null && window.gyroRoll != null) {
         const pitch = window.gyroPitch; // beta: front/back tilt [-180, 180]
         const roll = window.gyroRoll;   // gamma: left/right tilt [-90, 90]
         
-        const neutralPitch = window.gyroNeutralPitch || 45;
+        const neutralPitch = window.gyroNeutralPitch || 0;
         const neutralRoll = window.gyroNeutralRoll || 0;
         
         // Use a 15-degree deadzone around the calibrated neutral position
