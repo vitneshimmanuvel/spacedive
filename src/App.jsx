@@ -219,6 +219,13 @@ function App() {
     window.gameOver = false;
     
     if (mode === 'mobile') {
+      setGameState('mobile-permission');
+    } else {
+      setGameState('playing');
+    }
+  };
+
+  const requestMobileAccess = async () => {
       const setupGyro = async () => {
         try {
           if (document.documentElement.requestFullscreen) {
@@ -230,6 +237,8 @@ function App() {
         } catch (err) {
           console.warn("Fullscreen failed", err);
         }
+
+        let isCalibrated = false;
 
         window.addEventListener('deviceorientation', (e) => {
            let pitch, roll;
@@ -247,6 +256,12 @@ function App() {
              // Portrait
              pitch = e.beta;
              roll = e.gamma;
+           }
+           
+           if (!isCalibrated && pitch !== null && roll !== null) {
+              window.gyroNeutralPitch = pitch;
+              window.gyroNeutralRoll = roll;
+              isCalibrated = true;
            }
            
            window.gyroPitch = pitch;
@@ -267,15 +282,12 @@ function App() {
           }
         }).catch(err => {
           console.error(err);
-          alert('Gyroscope permission error (Must be HTTPS). Error: ' + err);
+          alert('Gyroscope permission error (Must be HTTPS or disable Brave Shields). Error: ' + err);
           setupGyro(); // Try anyway
         });
       } else {
         setupGyro();
       }
-    } else {
-      setGameState('playing');
-    }
   };
 
   const handleRockCollision = () => {
@@ -288,12 +300,26 @@ function App() {
     <div className="canvas-container">
       {gameState === 'start' && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(5,5,8,0.9)', zIndex: 20 }}>
-          <h1 style={{ color: '#fff', marginBottom: 40, fontFamily: 'sans-serif' }}>SPACE SURVIVAL</h1>
+          <h1 style={{ color: '#fff', marginBottom: 40, fontFamily: 'sans-serif', textAlign: 'center' }}>SPACE SURVIVAL</h1>
           <button style={{ padding: '15px 40px', fontSize: '18px', margin: '10px', cursor: 'pointer', borderRadius: '8px', border: 'none', backgroundColor: '#00aaff', color: '#fff', fontWeight: 'bold' }} onClick={() => startGame('pc')}>
             Play on PC (WASD/Arrows + Shift)
           </button>
           <button style={{ padding: '15px 40px', fontSize: '18px', margin: '10px', cursor: 'pointer', borderRadius: '8px', border: 'none', backgroundColor: '#ff5500', color: '#fff', fontWeight: 'bold' }} onClick={() => startGame('mobile')}>
             Play on Mobile (Gyroscope + Touch)
+          </button>
+        </div>
+      )}
+
+      {gameState === 'mobile-permission' && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(5,5,8,0.9)', zIndex: 20 }}>
+          <h1 style={{ color: '#fff', marginBottom: 20, fontFamily: 'sans-serif', textAlign: 'center' }}>Mobile Controls</h1>
+          <p style={{ color: '#ccc', marginBottom: 40, maxWidth: '80%', textAlign: 'center', fontSize: '18px', lineHeight: '1.5' }}>
+            We need access to your device's orientation sensors to steer the ship. <br/><br/>
+            Hold your phone comfortably like a steering wheel. That position will be your "neutral" center when you start.<br/><br/>
+            <b>Brave Browser users:</b> Please turn off Shields (the lion icon) for this site, as Brave blocks sensors by default.
+          </p>
+          <button style={{ padding: '15px 40px', fontSize: '18px', margin: '10px', cursor: 'pointer', borderRadius: '8px', border: 'none', backgroundColor: '#00aaff', color: '#fff', fontWeight: 'bold' }} onClick={requestMobileAccess}>
+            Grant Permission & Start
           </button>
         </div>
       )}

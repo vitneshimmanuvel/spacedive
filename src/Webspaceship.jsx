@@ -125,11 +125,14 @@ export default function Webspaceship({ gameOver = false, ...props }) {
         const pitch = window.gyroPitch; // beta: front/back tilt [-180, 180]
         const roll = window.gyroRoll;   // gamma: left/right tilt [-90, 90]
         
-        // Neutral position is holding phone roughly at 45 degrees
-        if (pitch < 30) moveUp = true;
-        if (pitch > 60) moveDown = true;
-        if (roll < -15) moveLeft = true;
-        if (roll > 15) moveRight = true;
+        const neutralPitch = window.gyroNeutralPitch || 45;
+        const neutralRoll = window.gyroNeutralRoll || 0;
+        
+        // Use a 15-degree deadzone around the calibrated neutral position
+        if (pitch < neutralPitch - 15) moveUp = true;
+        if (pitch > neutralPitch + 15) moveDown = true;
+        if (roll < neutralRoll - 15) moveLeft = true;
+        if (roll > neutralRoll + 15) moveRight = true;
       }
     }
 
