@@ -219,10 +219,38 @@ function App() {
     window.gameOver = false;
     
     if (mode === 'mobile') {
-      const setupGyro = () => {
+      const setupGyro = async () => {
+        try {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          }
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock('landscape').catch(e => console.warn(e));
+          }
+        } catch (err) {
+          console.warn("Fullscreen failed", err);
+        }
+
         window.addEventListener('deviceorientation', (e) => {
-           window.gyroPitch = e.beta;
-           window.gyroRoll = e.gamma;
+           let pitch, roll;
+           const angle = (window.screen && window.screen.orientation && window.screen.orientation.angle) || window.orientation || 0;
+           
+           if (angle === 90) {
+             // Landscape primary (top to left)
+             pitch = e.gamma; 
+             roll = -e.beta;
+           } else if (angle === -90 || angle === 270) {
+             // Landscape secondary (top to right)
+             pitch = -e.gamma;
+             roll = e.beta;
+           } else {
+             // Portrait
+             pitch = e.beta;
+             roll = e.gamma;
+           }
+           
+           window.gyroPitch = pitch;
+           window.gyroRoll = roll;
         });
         window.addEventListener('touchstart', () => { window.spaceshipShift = true; });
         window.addEventListener('touchend', () => { window.spaceshipShift = false; });
