@@ -7,11 +7,13 @@ import React, { useRef, useEffect, useMemo } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-export default function Webspaceship(props) {
+export default function Webspaceship({ gameOver = false, ...props }) {
   const { nodes, materials } = useGLTF('/webspaceship.glb')
 
   const shipGroupRef = useRef()
+  const shipMeshGroupRef = useRef()
   const flame1Ref = useRef()
   const flame2Ref = useRef()
   
@@ -21,8 +23,20 @@ export default function Webspaceship(props) {
   const innerMat2 = useRef()
 
   // Track keyboard inputs
-  const keys = useRef({ w: false, a: false, s: false, d: false })
+  const keys = useRef({
+    w: false,
+    a: false,
+    s: false,
+    d: false,
+    arrowup: false,
+    arrowdown: false,
+    arrowleft: false,
+    arrowright: false
+  })
   const targetPosition = useRef(new THREE.Vector3(0, 0, 0))
+  const worldShipPos = useRef(new THREE.Vector3())
+  const shipBounds = useRef(new THREE.Box3())
+  const shipSphere = useRef(new THREE.Sphere())
 
   // Color constants for lerping
   const colors = useMemo(() => {
@@ -34,8 +48,22 @@ export default function Webspaceship(props) {
     }
   }, [])
 
+  const shipMergedGeometry = useMemo(() => {
+    if (!nodes.Cube002) return null;
+    const geoms = [
+      nodes.Cube002.geometry.clone(),
+      nodes.Cube002_1.geometry.clone(),
+      nodes.Cube002_2.geometry.clone(),
+      nodes.Cube002_3.geometry.clone()
+    ];
+    const merged = mergeGeometries(geoms);
+    merged.computeBoundsTree();
+    return merged;
+  }, [nodes]);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (gameOver) return
       const key = e.key.toLowerCase()
       if (keys.current.hasOwnProperty(key)) keys.current[key] = true
       if (key === 'shift') window.spaceshipShift = true
@@ -51,7 +79,23 @@ export default function Webspaceship(props) {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [])
+  }, [gameOver])
+
+  useEffect(() => {
+    if (!gameOver) return
+    keys.current = {
+      w: false,
+      a: false,
+      s: false,
+      d: false,
+      arrowup: false,
+      arrowdown: false,
+      arrowleft: false,
+      arrowright: false
+    }
+    window.spaceshipShift = false
+    window.spaceshipMoving = false
+  }, [gameOver])
 
   useEffect(() => {
     // Force the outline materials to be pure black and unlit
@@ -67,21 +111,38 @@ export default function Webspaceship(props) {
   }, [materials])
 
   useFrame((state, delta) => {
+    if (gameOver) return
     const boost = window.spaceshipBoost || 0;
 
     // Track active movement globally for the camera controller
-    window.spaceshipMoving = keys.current.w || keys.current.a || keys.current.s || keys.current.d;
+    let moveUp = keys.current.w || keys.current.arrowup
+    let moveDown = keys.current.s || keys.current.arrowdown
+    let moveLeft = keys.current.a || keys.current.arrowleft
+    let moveRight = keys.current.d || keys.current.arrowright
+    
+    if (window.controlMode === 'mobile') {
+      const pitch = window.gyroPitch || 0; // beta: front/back tilt [-180, 180]
+      const roll = window.gyroRoll || 0;   // gamma: left/right tilt [-90, 90]
+      
+      // Neutral position is holding phone roughly at 45 degrees
+      if (pitch < 30) moveUp = true;
+      if (pitch > 60) moveDown = true;
+      if (roll < -15) moveLeft = true;
+      if (roll > 15) moveRight = true;
+    }
+
+    window.spaceshipMoving = moveUp || moveDown || moveLeft || moveRight;
 
     // Update movement target based on keys - Boost increases glide speed
     const speed = (6 + boost * 10) * delta; // Increased base and boost speed to traverse large space
     const maxOffset = 100.0; // Effectively removed boundaries so you can go as far left/right as needed
 
-    if (keys.current.w && targetPosition.current.y < maxOffset) targetPosition.current.y += speed
-    if (keys.current.s && targetPosition.current.y > -maxOffset) targetPosition.current.y -= speed
+    if (moveUp && targetPosition.current.y < maxOffset) targetPosition.current.y += speed
+    if (moveDown && targetPosition.current.y > -maxOffset) targetPosition.current.y -= speed
     
     // Fixed: A moves left (-x), D moves right (+x)
-    if (keys.current.a && targetPosition.current.x > -maxOffset) targetPosition.current.x -= speed
-    if (keys.current.d && targetPosition.current.x < maxOffset) targetPosition.current.x += speed
+    if (moveLeft && targetPosition.current.x > -maxOffset) targetPosition.current.x -= speed
+    if (moveRight && targetPosition.current.x < maxOffset) targetPosition.current.x += speed
 
     // Apply smooth gliding motion with lerp
     if (shipGroupRef.current) {
@@ -94,14 +155,34 @@ export default function Webspaceship(props) {
       let targetRollZ = 0;
       let targetPitchX = 0;
       
-      if (keys.current.a) targetRollZ = 0.6; // Roll banking left
-      if (keys.current.d) targetRollZ = -0.6; // Roll banking right
+      if (moveLeft) targetRollZ = 0.6; // Roll banking left
+      if (moveRight) targetRollZ = -0.6; // Roll banking right
       
-      if (keys.current.w) targetPitchX = 0.4; // Pitch nose up
-      if (keys.current.s) targetPitchX = -0.4; // Pitch nose down
+      if (moveUp) targetPitchX = 0.4; // Pitch nose up
+      if (moveDown) targetPitchX = -0.4; // Pitch nose down
       
       shipGroupRef.current.rotation.z = THREE.MathUtils.lerp(shipGroupRef.current.rotation.z, targetRollZ, 0.1)
       shipGroupRef.current.rotation.x = THREE.MathUtils.lerp(shipGroupRef.current.rotation.x, targetPitchX, 0.1)
+      shipGroupRef.current.updateWorldMatrix(true, false)
+      shipGroupRef.current.getWorldPosition(worldShipPos.current)
+      shipBounds.current.setFromObject(shipGroupRef.current)
+      shipBounds.current.getBoundingSphere(shipSphere.current)
+      window.spaceshipPosition = {
+        x: worldShipPos.current.x,
+        y: worldShipPos.current.y,
+        z: worldShipPos.current.z,
+      }
+      window.spaceshipCollider = {
+        x: shipSphere.current.center.x,
+        y: shipSphere.current.center.y,
+        z: shipSphere.current.center.z,
+        radius: Math.max(shipSphere.current.radius * 0.36, 0.22),
+      }
+      if (shipMeshGroupRef.current) {
+        shipMeshGroupRef.current.updateWorldMatrix(true, false);
+        window.spaceshipMatrixWorld = shipMeshGroupRef.current.matrixWorld;
+        window.spaceshipGeometry = shipMergedGeometry;
+      }
     }
 
     // Lerp colors based on boost
@@ -128,7 +209,7 @@ export default function Webspaceship(props) {
         {/* Flip the ship 180 degrees to face away from the camera into deep space */}
         <group rotation={[0, Math.PI, 0]}>
           {/* Ship / Cartoon Cube */}
-          <group position={[-0.544, 0.526, 1.508]} scale={0.277}>
+          <group ref={shipMeshGroupRef} position={[-0.544, 0.526, 1.508]} scale={0.277}>
             <mesh geometry={nodes.Cube002.geometry} material={materials.bodyred} />
             <mesh geometry={nodes.Cube002_1.geometry} material={materials.galss} />
             <mesh geometry={nodes.Cube002_2.geometry} material={materials['Material.001']} />
