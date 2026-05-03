@@ -1,6 +1,6 @@
 import React, { Suspense, useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment, OrbitControls, Center, ContactShadows, useGLTF } from '@react-three/drei';
+import { Environment, OrbitControls, Center, ContactShadows, useGLTF, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import Webspaceship from './Webspaceship';
@@ -31,65 +31,105 @@ function CameraController({ orbitRef }) {
 }
 
 function RockObstacles({ gameOver, onHitRock }) {
-  const { scene } = useGLTF('/relwebrock1glb.glb');
-  const count = 22;
+  const count = 30; // Increased count since space is larger now
   const shipWorldPoint = useMemo(() => new THREE.Vector3(), []);
   const previousShipPoint = useRef(new THREE.Vector3());
-  const sampledShipPoint = useMemo(() => new THREE.Vector3(), []);
-  const shipLocalPoint = useMemo(() => new THREE.Vector3(), []);
-  const closestPoint = useMemo(() => new THREE.Vector3(), []);
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const rockTexture = useTexture('/asteroid_texture.png');
+  
   const rocks = useMemo(() => {
     return Array.from({ length: count }, (_, i) => {
-      const scale = 0.9 + (i % 5) * 0.22;
-      const object = scene.clone(true);
-      const colliders = [];
-      object.traverse((child) => {
-        if (!child.isMesh) return;
-        child.material = child.material.clone();
-        child.material.color = new THREE.Color('#888890');
-        child.material.roughness = 0.8;
-        child.material.metalness = 0.05;
-        if (!child.geometry.boundsTree) child.geometry.computeBoundsTree();
-        colliders.push(child);
+      // random size in different axes to make different sizes and shapes
+      const sizeX = 0.8 + Math.random() * 2.5;
+      const sizeY = 0.8 + Math.random() * 2.5;
+      const sizeZ = 0.8 + Math.random() * 2.5;
+      
+      // different sides / geometries
+      const geomType = Math.floor(Math.random() * 3);
+      let geometry;
+      if (geomType === 0) geometry = new THREE.DodecahedronGeometry(1, 1);
+      else if (geomType === 1) geometry = new THREE.IcosahedronGeometry(1, 1);
+      else geometry = new THREE.OctahedronGeometry(1, 2);
+      
+      // Jitter vertices for rocky look and different sides
+      const pos = geometry.attributes.position;
+      const v = new THREE.Vector3();
+      const rockSeed = Math.random() * 100;
+      for (let j = 0; j < pos.count; j++) {
+        v.fromBufferAttribute(pos, j);
+        
+        // Generate pseudo-random noise based on the un-displaced vertex position
+        // This ensures duplicate vertices (at seams) move together, preventing gaps
+        const hash = Math.sin(v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + rockSeed) * 43758.5453;
+        const noise = hash - Math.floor(hash);
+        
+        v.normalize().multiplyScalar(1 + (noise - 0.5) * 0.4);
+        pos.setXYZ(j, v.x, v.y, v.z);
+      }
+      geometry.computeVertexNormals();
+      geometry.computeBoundsTree(); // BVH for accurate point raycasting
+
+      const material = new THREE.MeshStandardMaterial({
+        map: rockTexture,
+        color: new THREE.Color().setHSL(0, 0, 0.4 + Math.random() * 0.2),
+        roughness: 0.9,
+        metalness: 0.1,
+        flatShading: true
       });
-      object.scale.set(scale, scale, scale);
-      return { object, colliders };
+      
+      const object = new THREE.Mesh(geometry, material);
+      object.scale.set(sizeX, sizeY, sizeZ);
+      
+      return { object };
     });
-  }, [scene, count]);
+  }, [count, rockTexture]);
+
   const [positions, rotations] = useMemo(() => {
     const pos = [];
     const rot = [];
     for (let i = 0; i < count; i++) {
        pos.push(
-        (Math.random() - 0.5) * 25,
-        (Math.random() - 0.5) * 15,
-        -50 - Math.random() * 130
+        (Math.random() - 0.5) * 40,
+        (Math.random() - 0.5) * 30,
+        -50 - Math.random() * 150
        );
        rot.push(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     }
     return [pos, rot];
-  }, []);
+  }, [count]);
 
   useFrame((_, delta) => {
     if (gameOver) return;
     const ship = window.spaceshipCollider || window.spaceshipPosition;
     const shipCollisionRadius = ship.radius ?? 0.3;
     shipWorldPoint.set(ship.x, ship.y, ship.z);
+    
     if (previousShipPoint.current.lengthSq() === 0) {
       previousShipPoint.current.copy(shipWorldPoint);
     }
 
-    const speed = 15 + (window.spaceshipBoost * 25);
+    // Update global game time for difficulty scaling
+    if (!window.gameTime) window.gameTime = 0;
+    window.gameTime += delta;
+    const difficultyScale = 1 + (window.gameTime / 60); // Speed doubles every 60 seconds
+    
+    const speed = (30 + (window.spaceshipBoost * 50)) * difficultyScale;
+    
+    // Direction of ship movement
+    const dir = new THREE.Vector3().subVectors(shipWorldPoint, previousShipPoint.current);
+    const dist = dir.length();
+    const isMoving = dist > 0.00001;
+
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
       positions[i3 + 2] += speed * delta;
-      rotations[i3] += delta * 0.5;
-      rotations[i3 + 1] += delta * 0.5;
+      rotations[i3] += delta * 0.2;
+      rotations[i3 + 1] += delta * 0.3;
 
       if (positions[i3 + 2] > 15) {
-        positions[i3 + 2] = -80 - Math.random() * 50;
-        positions[i3] = (Math.random() - 0.5) * 25;
-        positions[i3 + 1] = (Math.random() - 0.5) * 15;
+        positions[i3 + 2] = -80 - Math.random() * 80;
+        positions[i3] = (Math.random() - 0.5) * 40;
+        positions[i3 + 1] = (Math.random() - 0.5) * 30;
       }
 
       const rockObject = rocks[i].object;
@@ -98,43 +138,41 @@ function RockObstacles({ gameOver, onHitRock }) {
       rockObject.updateMatrixWorld(true);
       
       const distSq = previousShipPoint.current.distanceToSquared(rockObject.position);
-      if (distSq > 15 * 15) continue; // Early exit for rocks far away
+      const maxScale = Math.max(rockObject.scale.x, rockObject.scale.y, rockObject.scale.z);
+      const boundsRadius = maxScale * 1.5; // Roughly the bounds
+      
+      if (distSq > Math.pow(boundsRadius + 10, 2)) continue; // Optimization
 
-      for (const colliderMesh of rocks[i].colliders) {
-        // Swept collision: sample along ship path to prevent passing through rocks between frames.
-        for (let s = 0; s <= 4; s++) {
-          const t = s / 4;
-          sampledShipPoint.lerpVectors(previousShipPoint.current, shipWorldPoint, t);
-          shipLocalPoint.copy(sampledShipPoint);
-          colliderMesh.worldToLocal(shipLocalPoint);
-          const distance = colliderMesh.geometry.boundsTree.closestPointToPoint(
-            shipLocalPoint,
-            closestPoint
-          );
-          
-          if (distance <= shipCollisionRadius) {
-            // Precise Native Shape Collision
-            if (window.spaceshipGeometry && window.spaceshipMatrixWorld) {
-               const offset = new THREE.Vector3().subVectors(sampledShipPoint, shipWorldPoint);
-               const shipMat = window.spaceshipMatrixWorld.clone();
-               shipMat.elements[12] += offset.x;
-               shipMat.elements[13] += offset.y;
-               shipMat.elements[14] += offset.z;
-               
-               const inverseColliderMat = colliderMesh.matrixWorld.clone().invert();
-               const geomToBvhMatrix = inverseColliderMat.multiply(shipMat);
-               
-               if (colliderMesh.geometry.boundsTree.intersectsGeometry(window.spaceshipGeometry, geomToBvhMatrix)) {
+      // 1. Point Raycast (Sweep test from previous to current position)
+      if (isMoving) {
+         raycaster.set(previousShipPoint.current, dir.clone().normalize());
+         raycaster.far = dist + shipCollisionRadius; 
+         const hits = raycaster.intersectObject(rockObject, false);
+         if (hits.length > 0) {
+            onHitRock?.();
+            return;
+         }
+      }
+
+      // 2. Static Point Raycast (Check distance from ship center to closest rock surface)
+      const toRock = new THREE.Vector3().subVectors(rockObject.position, shipWorldPoint);
+      const toRockDist = toRock.length();
+      if (toRockDist <= boundsRadius + shipCollisionRadius) {
+         raycaster.set(rockObject.position, toRock.clone().multiplyScalar(-1).normalize());
+         raycaster.far = toRockDist;
+         const hits = raycaster.intersectObject(rockObject, false);
+         if (hits.length > 0) {
+             const surfacePoint = hits[0].point;
+             if (surfacePoint.distanceToSquared(shipWorldPoint) <= shipCollisionRadius * shipCollisionRadius) {
                  onHitRock?.();
                  return;
-               }
-            } else {
-               // Fallback
-               onHitRock?.();
-               return;
-            }
-          }
-        }
+             }
+         } else if (toRockDist < maxScale * 0.5) {
+             // If raycast from rock center to ship hits nothing, but we are very close,
+             // it means we are inside the geometry.
+             onHitRock?.();
+             return;
+         }
       }
     }
     previousShipPoint.current.copy(shipWorldPoint);
@@ -178,7 +216,9 @@ function MovingStars() {
     }
 
     // Normal speed is ~7, boosts up to 17
-    const currentSpeed = 7 + (window.spaceshipBoost * 10);
+    const difficultyScale = 1 + ((window.gameTime || 0) / 60);
+    // Normal speed is doubled from 7 to 14, boosts up to 20 additional
+    const currentSpeed = (14 + (window.spaceshipBoost * 20)) * difficultyScale;
 
     // Stars move towards +Z (Flying towards the camera)
     for (let i = 0; i < count; i++) {
@@ -217,6 +257,7 @@ function App() {
   const startGame = (mode) => {
     window.controlMode = mode;
     window.gameOver = false;
+    window.gameTime = 0;
     
     if (mode === 'mobile') {
       setGameState('mobile-permission');
@@ -360,7 +401,5 @@ function App() {
     </div>
   );
 }
-
-useGLTF.preload('/relwebrock1glb.glb');
 
 export default App;

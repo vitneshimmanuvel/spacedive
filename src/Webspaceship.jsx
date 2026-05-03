@@ -131,8 +131,9 @@ export default function Webspaceship({ gameOver = false, ...props }) {
         // Use a 15-degree deadzone around the calibrated neutral position
         if (pitch < neutralPitch - 15) moveUp = true;
         if (pitch > neutralPitch + 15) moveDown = true;
-        if (roll < neutralRoll - 15) moveLeft = true;
-        if (roll > neutralRoll + 15) moveRight = true;
+        // Inverted Left and Right based on user request
+        if (roll < neutralRoll - 15) moveRight = true; 
+        if (roll > neutralRoll + 15) moveLeft = true;
       }
     }
 
